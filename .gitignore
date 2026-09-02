@@ -1,0 +1,45 @@
+# Virtual environment
+.venv/
+venv/
+env/
+
+# Python cache
+__pycache__/
+*.py[cod]
+*$py.class
+
+# Jupyter
+.ipynb_checkpoints/
+
+# Environment variables
+.env
+.env.*
+
+# Model checkpoints and generated weights
+*.pt
+*.pth
+*.ckpt
+*.h5
+*.keras
+
+# Experiment outputs
+runs/
+wandb/
+mlruns/
+
+# Data files (optional - keep datasets out of Git)
+data/
+datasets/
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# IDE
+.vscode/
+.idea/
+
+# Python build
+build/
+dist/
+*.egg-info/
