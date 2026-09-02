@@ -1,41 +1,49 @@
-# DeepFakeLab: Research-Grade DeepFake Face Detection & Generative Benchmarking
+# GAN-VAE: Research-Grade DeepFake Face Detection & Generative Benchmarking
 
-DeepFakeLab is an empirical research platform designed to investigate facial synthesis artifacts across **DeepFake generators (StyleGAN/RVF10K)**, **Variational Autoencoders (VAEs)**, and **Generative Adversarial Networks (GANs)**, while training and evaluating robust deep learning detectors (CNNs & Vision Transformers).
+GAN-VAE is an empirical research platform designed to investigate facial synthesis artifacts across **DeepFake generators (StyleGAN/RVF10K)**, **Variational Autoencoders (VAEs)**, and **Generative Adversarial Networks (GANs)**, while training and evaluating robust deep learning detectors (CNNs & Vision Transformers).
 
 ---
 
 ## 📁 Project Architecture & Rationale
 
+All dataset files, source code, research notebooks, and outputs are consolidated inside the **`GAN/`** directory:
+
 ```text
-DeepFakeLab/
+GAN-VAE/
 │
-├── data/
-│   └── rvf10k/                    # Raw benchmark dataset (10,000 real & fake faces)
-│       ├── real/                  # Real authentic face images
-│       └── fake/                  # Synthesized deepfake face images
-├── notebooks/
-│   └── 01_EDA.ipynb               # CVPR/ICCV-style Exploratory Data Analysis & Hypotheses
-├── src/
-│   ├── __init__.py                # Package initialization
-│   ├── config.py                  # Project paths, random seeds, publication styling tokens
-│   ├── download_data.py           # Automated RVF10K dataset fetch and extraction
-│   ├── integrity.py               # Dataset verification, corruption scanner, format checker
-│   ├── metrics.py                 # Photometric (luminance, contrast) and geometry extractors
-│   └── visualization.py           # High-DPI publication plots and side-by-side artifact panels
-├── outputs/
-│   ├── figures/                   # Exported publication-ready figures (PNG, 300 DPI)
-│   └── reports/                   # Tabular summaries, integrity reports, statistical logs
+├── GAN/
+│   ├── data/
+│   │   ├── README.md              # Dataset download & verification instructions
+│   │   └── rvf10k/                # Raw benchmark dataset (10,000 real & fake faces)
+│   │       ├── real/              # Real authentic face images
+│   │       ├── fake/              # Synthesized deepfake face images
+│   │       ├── train/             # Official train split (3,500 real / 3,500 fake)
+│   │       └── valid/             # Official valid split (1,500 real / 1,500 fake)
+│   ├── notebooks/
+│   │   ├── 01_EDA.ipynb           # CVPR/ICCV-style Exploratory Data Analysis & Hypotheses
+│   │   ├── build_notebook.py      # Automated notebook generator script
+│   │   └── execute_notebook.py    # Headless execution script
+│   ├── src/
+│   │   ├── __init__.py            # Package initialization
+│   │   ├── config.py              # Project paths, random seeds, publication styling tokens
+│   │   ├── download_data.py       # Automated RVF10K dataset fetch and extraction
+│   │   ├── integrity.py           # Dataset verification, corruption scanner, format checker
+│   │   ├── metrics.py             # Photometric (luminance, contrast) and geometry extractors
+│   │   └── visualization.py       # High-DPI publication plots and side-by-side artifact panels
+│   └── outputs/
+│       ├── figures/               # Exported publication-ready figures (PNG, 300 DPI)
+│       └── reports/               # Tabular summaries, integrity reports, statistical logs
 ├── setup_project.py               # Automated folder generator script
 ├── requirements.txt               # Pinned project dependencies
 └── README.md                      # Comprehensive project guide and setup documentation
 ```
 
 ### Folder Explanations
-- **`data/rvf10k/`**: Stores the raw, unmodified image corpus. Strict isolation of raw data guarantees experimental repeatability and prevents data corruption or leakage.
-- **`notebooks/`**: Houses scientific notebooks formatted like CVPR/ICCV conference papers, integrating mathematical formulation, executable code, observations, and decisions.
-- **`src/`**: Modular Python codebase adhering to clean code standards. Isolating reusable functions prevents notebook clutter and facilitates unit testing.
-- **`outputs/figures/`**: Dedicated destination for all figures generated during analysis, maintaining vector/raster assets for research papers and presentations.
-- **`outputs/reports/`**: Structured outputs (CSV, Markdown) containing data integrity audits, metric summaries, and statistical validation tables.
+- **`GAN/data/rvf10k/`**: Stores the raw, unmodified image corpus. Strict isolation of raw data guarantees experimental repeatability and prevents data corruption or leakage. Raw dataset files remain gitignored.
+- **`GAN/notebooks/`**: Houses scientific notebooks formatted like CVPR/ICCV conference papers, integrating mathematical formulation, executable code, observations, and decisions.
+- **`GAN/src/`**: Modular Python codebase adhering to clean code standards. Isolating reusable functions prevents notebook clutter and facilitates unit testing.
+- **`GAN/outputs/figures/`**: Dedicated destination for all figures generated during analysis, maintaining vector/raster assets for research papers and presentations.
+- **`GAN/outputs/reports/`**: Structured outputs (CSV, Markdown) containing data integrity audits, metric summaries, and statistical validation tables.
 
 ---
 
@@ -45,8 +53,8 @@ DeepFakeLab/
 
 #### Windows (PowerShell)
 ```powershell
-# Navigate to project directory
-cd "c:\Users\ADVAITH G\Desktop\GAN AND VAE\DeepFakeLab"
+# Navigate to project repository
+cd "c:\Users\ADVAITH G\Desktop\GAN AND VAE\GAN-VAE"
 
 # Create virtual environment
 python -m venv .venv
@@ -57,7 +65,7 @@ python -m venv .venv
 
 #### Linux / macOS (Bash)
 ```bash
-cd DeepFakeLab
+cd GAN-VAE
 python3 -m venv .venv
 source .venv/bin/activate
 ```
@@ -87,16 +95,16 @@ Phase 1 focuses exclusively on establishing empirical evidence before any prepro
 
 1. **Automated Dataset Ingestion**:
    ```bash
-   python src/download_data.py
+   python GAN/src/download_data.py
    ```
 2. **Integrity Verification**:
    ```bash
-   python -c "from src.integrity import verify_rvf10k; verify_rvf10k()"
+   python -c "import sys; sys.path.insert(0, 'GAN'); from src.integrity import verify_dataset_integrity; verify_dataset_integrity()"
    ```
 3. **Research-Grade EDA Notebook**:
-   Launch JupyterLab and open `notebooks/01_EDA.ipynb`:
+   Launch JupyterLab and open `GAN/notebooks/01_EDA.ipynb`:
    ```bash
-   jupyter lab notebooks/01_EDA.ipynb
+   jupyter lab GAN/notebooks/01_EDA.ipynb
    ```
 
 ---

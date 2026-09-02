@@ -31,8 +31,12 @@ mlruns/
 data/*
 !data/README.md
 !data/.gitkeep
+GAN/data/*
+!GAN/data/README.md
+!GAN/data/.gitkeep
 datasets/
 *.zip
+**/*.zip
 
 # OS files
 .DS_Store
