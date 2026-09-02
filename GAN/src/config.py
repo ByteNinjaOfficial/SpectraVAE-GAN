@@ -12,10 +12,17 @@ import matplotlib.pyplot as plt
 # 1. PATH DEFINITIONS
 # ==========================================
 SRC_DIR = Path(__file__).resolve().parent
-PROJECT_ROOT = SRC_DIR.parent
-DATA_DIR = PROJECT_ROOT / "data"
+GAN_ROOT = SRC_DIR.parent
+REPO_ROOT = GAN_ROOT.parent
+
+# Centralized global data directory shared across GAN-VAE projects
+if (REPO_ROOT / "data").exists():
+    DATA_DIR = REPO_ROOT / "data"
+else:
+    DATA_DIR = GAN_ROOT / "data"
+
 RVF10K_DIR = DATA_DIR / "rvf10k"
-OUTPUTS_DIR = PROJECT_ROOT / "outputs"
+OUTPUTS_DIR = GAN_ROOT / "outputs"
 FIGURES_DIR = OUTPUTS_DIR / "figures"
 REPORTS_DIR = OUTPUTS_DIR / "reports"
 
