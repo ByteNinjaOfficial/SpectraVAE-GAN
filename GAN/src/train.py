@@ -1,16 +1,17 @@
 """
-DeepFakeLab (GAN Module) - DCGAN Training Engine
-Milestone 3.6: Standalone, production-ready DCGAN training loop following Radford et al. (2015).
-Trained strictly on authentic (real) human faces from RVF10K with automatic checkpointing,
-fixed-noise visual tracking, and graceful interrupt handling.
+DeepFakeLab (GAN Module) - DCGAN Extended Training Engine
+Milestones 3.6A - 3.6G: Seamless checkpoint resume, iteration-level CSV logging,
+5-epoch milestone checkpoints, evolution timeline generation, real-time health monitoring,
+and automatic milestone progress report creation.
 """
 
 import sys
 import os
+import csv
 import argparse
 import signal
 from pathlib import Path
-from typing import Dict, List, Any
+from typing import Dict, List, Any, Optional
 import torch
 import torch.nn as nn
 import torch.optim as optim
@@ -32,6 +33,7 @@ from src.config import (
     CHECKPOINTS_DIR,
     OUTPUTS_DIR,
     FIGURES_DIR,
+    REPORTS_DIR,
     RANDOM_SEED,
     set_seed,
 )
@@ -43,13 +45,15 @@ from src.utils import (
     generate_fixed_noise,
     save_image_grid,
     compile_training_gif,
-    plot_training_curves,
+    update_all_dashboards,
     save_checkpoint,
     load_checkpoint,
+    generate_evolution_report,
+    write_milestone_markdown_report,
     GENERATED_DIR,
 )
 
-# Global flag for graceful keyboard interrupt termination
+CSV_LOG_PATH = REPORTS_DIR / "training_metrics.csv"
 INTERRUPTED = False
 
 
@@ -63,6 +67,36 @@ def sigint_handler(signum, frame):
 signal.signal(signal.SIGINT, sigint_handler)
 
 
+def audit_training_health(
+    epoch: int,
+    avg_d_loss: float,
+    avg_g_loss: float,
+    avg_d_x: float,
+    avg_d_gz: float,
+    recent_d_losses: List[float],
+) -> List[str]:
+    """
+    Milestone 3.6F: Real-time health audit assessing adversarial stability.
+    """
+    alerts = []
+    # 1. Discriminator Overpowering
+    if avg_d_x > 0.96 and avg_d_gz < 0.0005:
+        alerts.append("[HEALTH WARNING] Discriminator is heavily overpowering Generator. Consider lowering lr_D or increasing G updates.")
+    # 2. Generator Overpowering
+    if avg_d_gz > 0.85:
+        alerts.append("[HEALTH WARNING] Generator is overpowering Discriminator. Discriminator gradients may be collapsing.")
+    # 3. Unstable Oscillations
+    if len(recent_d_losses) >= 3:
+        variance = float(torch.tensor(recent_d_losses[-3:]).var().item())
+        if variance > 1.2:
+            alerts.append(f"[HEALTH WARNING] Elevated loss variance detected (var={variance:.2f}). Adam momentum may be causing oscillations.")
+
+    if not alerts:
+        alerts.append("[HEALTH STATUS: OPTIMAL] Adversarial dynamics balanced. Gradients flowing continuously.")
+
+    return alerts
+
+
 def train_dcgan(
     epochs: int = 25,
     batch_size: int = 64,
@@ -71,47 +105,31 @@ def train_dcgan(
     latent_dim: int = LATENT_DIM,
     num_workers: int = 0,
     checkpoint_interval: int = 5,
-    resume_checkpoint: str = "",
+    resume: str = "auto",
     real_label_smoothing: float = 0.9,
     device: torch.device = TORCH_DEVICE,
     dry_run_batches: int = 0,
 ) -> Dict[str, Any]:
     """
-    Execute DCGAN adversarial training on authentic RVF10K faces.
-    
-    Args:
-        epochs: Number of complete training epochs.
-        batch_size: Mini-batch size.
-        lr: Learning rate for Adam optimizers (canonical: 0.0002).
-        beta1: Adam beta1 momentum coefficient (canonical: 0.5).
-        latent_dim: Latent noise vector dimension z (default: 100).
-        num_workers: DataLoader background worker processes.
-        checkpoint_interval: Epoch frequency for saving serialized weights.
-        resume_checkpoint: Path to checkpoint .pth to resume from.
-        real_label_smoothing: Target value for real images (default: 0.9).
-        device: Hardware device (cuda or cpu).
-        dry_run_batches: If > 0, stops after N batches per epoch for fast verification.
-        
-    Returns:
-        Dictionary containing trained models and metric history.
+    Execute or resume DCGAN adversarial training on authentic RVF10K faces up to specified total epochs.
     """
     global INTERRUPTED
     set_seed(RANDOM_SEED)
 
-    print("=" * 70)
-    print(" DeepFakeLab (GAN Module) - DCGAN Training Engine")
-    print("=" * 70)
+    print("=" * 72)
+    print(" DeepFakeLab (GAN Module) - Extended DCGAN Training Engine (25 Epochs)")
+    print("=" * 72)
     print(f" Target Device          : {device} ({DEVICE_NAME})")
-    print(f" Dataset Target         : RVF10K Authentic Faces (train/real/ only)")
-    print(f" Image Resolution       : {GAN_IMG_SIZE[0]}x{GAN_IMG_SIZE[1]} RGB")
-    print(f" Training Epochs        : {epochs}")
-    print(f" Batch Size             : {batch_size}")
-    print(f" Latent Dimension       : {latent_dim}")
+    print(f" Target Dataset         : RVF10K Authentic Faces (train/real/ only)")
+    print(f" Resolution             : {GAN_IMG_SIZE[0]}x{GAN_IMG_SIZE[1]} RGB")
+    print(f" Target Total Epochs    : {epochs}")
+    print(f" Mini-Batch Size        : {batch_size}")
+    print(f" Latent Vector Dim      : {latent_dim}")
     print(f" Learning Rate (lr)     : {lr} (beta1 = {beta1})")
-    print(f" Real Label Smoothing   : {real_label_smoothing}")
-    print("=" * 70)
+    print(f" One-Sided Smoothing    : {real_label_smoothing}")
+    print("=" * 72)
 
-    # 1. Instantiate Data Pipeline (strictly authentic real images)
+    # 1. DataLoader Setup (Strictly Authentic Faces)
     train_loader = get_dcgan_train_loader(
         batch_size=batch_size,
         num_workers=num_workers,
@@ -126,30 +144,52 @@ def train_dcgan(
     netG = DCGANGenerator(latent_dim=latent_dim, feature_maps=64, channels=3).to(device)
     netD = DCGANDiscriminator(channels=3, feature_maps=64, apply_sigmoid=False).to(device)
 
-    # 3. Setup Optimizers & Loss Function
+    # 3. Setup Optimizers & Loss Module
     optimizerD = optim.Adam(netD.parameters(), lr=lr, betas=(beta1, 0.999))
     optimizerG = optim.Adam(netG.parameters(), lr=lr, betas=(beta1, 0.999))
     loss_module = DCGANLoss(real_label_smoothing=real_label_smoothing)
 
-    # 4. Generate Deterministic Fixed Latent Noise Grid (64 samples for 8x8 panel)
+    # 4. Generate Constant Fixed Noise (64 samples for 8x8 panel)
     fixed_noise = generate_fixed_noise(num_samples=64, latent_dim=latent_dim, device=device)
 
-    # 5. Checkpoint Resume Logic
+    # 5. Milestone 3.6A: Automatic Checkpoint Detection & Resume
     start_epoch = 1
+    global_iteration = 0
     history: Dict[str, List[float]] = {"d_loss": [], "g_loss": [], "d_x": [], "d_gz": []}
 
-    if resume_checkpoint and Path(resume_checkpoint).exists():
-        print(f"[RESUME] Loading checkpoint from: {resume_checkpoint}")
-        ckpt = load_checkpoint(Path(resume_checkpoint), netG, optimizerG, device=device)
-        start_epoch = ckpt.get("epoch", 0) + 1
-        history = ckpt.get("history", history)
-        d_ckpt_path = Path(str(resume_checkpoint).replace("generator", "discriminator"))
-        if d_ckpt_path.exists():
-            load_checkpoint(d_ckpt_path, netD, optimizerD, device=device)
-        print(f"[RESUME] Successfully resumed from Epoch {start_epoch-1}.")
+    latest_g_path = CHECKPOINTS_DIR / "generator_latest.pth"
+    latest_d_path = CHECKPOINTS_DIR / "discriminator_latest.pth"
 
-    # Save initial epoch 0 baseline visualization before any gradient updates
-    if start_epoch == 1:
+    resume_target = None
+    if resume.lower() == "auto":
+        if latest_g_path.exists() and latest_d_path.exists():
+            resume_target = latest_g_path
+    elif resume != "" and Path(resume).exists():
+        resume_target = Path(resume)
+
+    if resume_target is not None:
+        print(f"[RESUME] Restoring training state from latest checkpoint: {resume_target}")
+        ckpt_g = load_checkpoint(resume_target, netG, optimizerG, device=device)
+        d_resume_path = CHECKPOINTS_DIR / resume_target.name.replace("generator", "discriminator")
+        if d_resume_path.exists():
+            load_checkpoint(d_resume_path, netD, optimizerD, device=device)
+        
+        start_epoch = ckpt_g.get("epoch", 0) + 1
+        history = ckpt_g.get("history", history)
+        print(f"[RESUME] Seamlessly resuming from Epoch {start_epoch-1} (Next: Epoch {start_epoch:02d}).")
+    else:
+        print("[TRAINING] Starting clean initialization from Epoch 01.")
+
+    # 6. Initialize CSV Metric Logger
+    csv_exists = CSV_LOG_PATH.exists() and (start_epoch > 1)
+    csv_file = open(CSV_LOG_PATH, "a" if csv_exists else "w", newline="", encoding="utf-8")
+    csv_writer = csv.writer(csv_file)
+    if not csv_exists:
+        csv_writer.writerow(["epoch", "iteration", "loss_g", "loss_d", "dx", "dgz_before", "dgz_after"])
+        csv_file.flush()
+
+    # Save initial epoch 0 baseline visualization if starting from scratch
+    if start_epoch == 1 and not (GENERATED_DIR / "epoch_000.png").exists():
         netG.eval()
         with torch.no_grad():
             initial_fakes = netG(fixed_noise)
@@ -157,9 +197,10 @@ def train_dcgan(
         netG.train()
 
     best_balance_metric = float("inf")
+    last_milestone_stats = None
 
     # ==========================================
-    # 6. MAIN ADVERSARIAL TRAINING LOOP
+    # 7. EXTENDED ADVERSARIAL TRAINING LOOP
     # ==========================================
     for epoch in range(start_epoch, epochs + 1):
         if INTERRUPTED:
@@ -182,46 +223,59 @@ def train_dcgan(
             if dry_run_batches > 0 and i >= dry_run_batches:
                 break
 
+            global_iteration += 1
             current_b_size = real_images.size(0)
             real_images = real_images.to(device)
 
             # -------------------------------------------------------------
-            # STEP 1: UPDATE DISCRIMINATOR: maximize log(D(x)) + log(1 - D(G(z)))
+            # STEP 1: UPDATE DISCRIMINATOR
             # -------------------------------------------------------------
             netD.zero_grad(set_to_none=True)
 
-            # 1.1 Forward pass on authentic real images
+            # 1.1 Authentic Real Images
             real_logits = netD(real_images)
             d_x = torch.sigmoid(real_logits).mean().item()
 
-            # 1.2 Forward pass on synthesized fake images (detach G to avoid backprop to G)
+            # 1.2 Synthesized Fake Images
             noise = torch.randn(current_b_size, latent_dim, 1, 1, device=device)
             fake_images = netG(noise)
             fake_logits_d = netD(fake_images.detach())
             d_gz1 = torch.sigmoid(fake_logits_d).mean().item()
 
-            # 1.3 Compute combined loss and backpropagate
-            errD, errD_real, errD_fake = loss_module.compute_discriminator_loss(real_logits, fake_logits_d)
+            # 1.3 Backward Pass & Optimizer Step
+            errD, _, _ = loss_module.compute_discriminator_loss(real_logits, fake_logits_d)
             errD.backward()
             optimizerD.step()
 
             # -------------------------------------------------------------
-            # STEP 2: UPDATE GENERATOR: maximize log(D(G(z)))
+            # STEP 2: UPDATE GENERATOR
             # -------------------------------------------------------------
             netG.zero_grad(set_to_none=True)
 
-            # 2.1 Re-evaluate fake images through D (without detach to pass gradients to G)
+            # 2.1 Re-evaluate Fake Images Through D
             fake_logits_g = netD(fake_images)
             d_gz2 = torch.sigmoid(fake_logits_g).mean().item()
 
-            # 2.2 Compute non-saturating generator loss and backpropagate
+            # 2.2 Non-Saturating Loss & Optimizer Step
             errG = loss_module.compute_generator_loss(fake_logits_g)
             errG.backward()
             optimizerG.step()
 
             # -------------------------------------------------------------
-            # STEP 3: LOGGING & PROGRESS REPORTING
+            # STEP 3: MILESTONE 3.6B - ITERATION METRIC LOGGING
             # -------------------------------------------------------------
+            csv_writer.writerow([
+                epoch,
+                global_iteration,
+                f"{errG.item():.5f}",
+                f"{errD.item():.5f}",
+                f"{d_x:.5f}",
+                f"{d_gz1:.5f}",
+                f"{d_gz2:.5f}",
+            ])
+            if global_iteration % 10 == 0:
+                csv_file.flush()
+
             running_d_loss += errD.item()
             running_g_loss += errG.item()
             running_d_x += d_x
@@ -232,13 +286,15 @@ def train_dcgan(
                 "L_D": f"{errD.item():.3f}",
                 "L_G": f"{errG.item():.3f}",
                 "D(x)": f"{d_x:.2f}",
-                "D(G(z))": f"{d_gz2:.2f}",
+                "D(G(z))": f"{d_gz2:.3f}",
             })
 
         if batch_count == 0:
             break
 
-        # Compute epoch averages
+        csv_file.flush()
+
+        # Compute Epoch Averages
         avg_d_loss = running_d_loss / batch_count
         avg_g_loss = running_g_loss / batch_count
         avg_d_x = running_d_x / batch_count
@@ -256,7 +312,21 @@ def train_dcgan(
         )
 
         # -------------------------------------------------------------
-        # STEP 4: VISUAL PROGRESS EVALUATION VIA FIXED NOISE
+        # STEP 4: MILESTONE 3.6F - REAL-TIME TRAINING HEALTH AUDIT
+        # -------------------------------------------------------------
+        alerts = audit_training_health(
+            epoch=epoch,
+            avg_d_loss=avg_d_loss,
+            avg_g_loss=avg_g_loss,
+            avg_d_x=avg_d_x,
+            avg_d_gz=avg_d_gz,
+            recent_d_losses=history["d_loss"],
+        )
+        for alert in alerts:
+            print(f"  {alert}")
+
+        # -------------------------------------------------------------
+        # STEP 5: FIXED NOISE GRID GENERATION
         # -------------------------------------------------------------
         netG.eval()
         with torch.no_grad():
@@ -266,34 +336,47 @@ def train_dcgan(
         netG.train()
 
         # -------------------------------------------------------------
-        # STEP 5: CHECKPOINT SERIALIZATION
+        # STEP 6: MILESTONES 3.6C & 3.6G - 5-EPOCH CHECKPOINT & REPORT
         # -------------------------------------------------------------
-        # Balance metric: distance of D(x) and D(G(z)) from 0.5 equilibrium
         balance_metric = abs(avg_d_x - 0.5) + abs(avg_d_gz - 0.5)
         is_best = balance_metric < best_balance_metric
         if is_best:
             best_balance_metric = balance_metric
 
-        if (epoch % checkpoint_interval == 0) or (epoch == epochs) or is_best:
-            save_checkpoint(
+        is_milestone = (epoch % checkpoint_interval == 0) or (epoch == epochs)
+
+        save_checkpoint(
+            epoch=epoch,
+            netG=netG,
+            netD=netD,
+            optimizerG=optimizerG,
+            optimizerD=optimizerD,
+            history=history,
+            is_best=is_best,
+            is_milestone=is_milestone,
+        )
+
+        if is_milestone:
+            curr_stats = {"d_loss": avg_d_loss, "g_loss": avg_g_loss, "d_x": avg_d_x, "d_gz": avg_d_gz}
+            write_milestone_markdown_report(
                 epoch=epoch,
-                netG=netG,
-                netD=netD,
-                optimizerG=optimizerG,
-                optimizerD=optimizerD,
-                history=history,
-                is_best=is_best,
+                stats=curr_stats,
+                prev_stats=last_milestone_stats,
             )
+            last_milestone_stats = curr_stats
+
+    csv_file.close()
 
     # ==========================================
-    # 7. POST-TRAINING VISUALIZATIONS & ARTIFACTS
+    # 8. POST-TRAINING DASHBOARDS & EVOLUTION
     # ==========================================
-    print("\n[POST-TRAINING] Generating final diagnostic figures and animations...")
+    print("\n[POST-TRAINING] Recompiling dashboards, evolution reports, and animations...")
     if len(history["d_loss"]) > 0:
-        plot_training_curves(history, save_dir=FIGURES_DIR)
+        update_all_dashboards(history, save_dir=FIGURES_DIR)
         compile_training_gif(source_dir=GENERATED_DIR, output_path=FIGURES_DIR / "training_progress.gif")
+        generate_evolution_report(source_dir=GENERATED_DIR, output_path=FIGURES_DIR / "evolution_report.png")
 
-    print("[SUCCESS] Milestone 3.6 DCGAN Training Engine completed cleanly.")
+    print("[SUCCESS] Extended Training & Adversarial Rebalancing completed cleanly.")
     return {
         "netG": netG,
         "netD": netD,
@@ -302,14 +385,14 @@ def train_dcgan(
 
 
 def parse_args():
-    parser = argparse.ArgumentParser(description="DeepFakeLab DCGAN Training on Authentic RVF10K Faces")
-    parser.add_argument("--epochs", type=int, default=15, help="Number of training epochs (default: 15)")
+    parser = argparse.ArgumentParser(description="DeepFakeLab Extended DCGAN Training Engine")
+    parser.add_argument("--epochs", type=int, default=25, help="Total target epochs (default: 25)")
     parser.add_argument("--batch_size", type=int, default=64, help="Batch size (default: 64)")
     parser.add_argument("--lr", type=float, default=0.0002, help="Learning rate (default: 0.0002)")
     parser.add_argument("--beta1", type=float, default=0.5, help="Adam beta1 (default: 0.5)")
-    parser.add_argument("--checkpoint_interval", type=int, default=5, help="Checkpoint frequency in epochs")
-    parser.add_argument("--resume", type=str, default="", help="Path to checkpoint file to resume from")
-    parser.add_argument("--dry_run", type=int, default=0, help="Dry run: limit to N batches per epoch")
+    parser.add_argument("--checkpoint_interval", type=int, default=5, help="Milestone checkpoint interval")
+    parser.add_argument("--resume", type=str, default="auto", help="Resume mode ('auto', path, or empty)")
+    parser.add_argument("--dry_run", type=int, default=0, help="Dry run: limit batches per epoch")
     return parser.parse_args()
 
 
@@ -321,6 +404,6 @@ if __name__ == "__main__":
         lr=args.lr,
         beta1=args.beta1,
         checkpoint_interval=args.checkpoint_interval,
-        resume_checkpoint=args.resume,
+        resume=args.resume,
         dry_run_batches=args.dry_run,
     )
