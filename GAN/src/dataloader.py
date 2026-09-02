@@ -24,6 +24,7 @@ from src.config import (
     PERSISTENT_WORKERS,
     RANDOM_SEED,
     DETECTOR_IMG_SIZE,
+    GAN_IMG_SIZE,
     set_seed,
 )
 from src.dataset import RVF10KDataset
@@ -96,6 +97,47 @@ def get_train_loader(
         generator=generator,
         worker_init_fn=seed_worker,
         drop_last=True,  # Recommended for DCGAN training to prevent partial mini-batches
+    )
+
+
+def get_dcgan_train_loader(
+    batch_size: int = BATCH_SIZE,
+    num_workers: int = NUM_WORKERS,
+    pin_memory: bool = PIN_MEMORY,
+    persistent_workers: Optional[bool] = None,
+    image_size: Tuple[int, int] = GAN_IMG_SIZE,
+    normalization: str = "gan",
+    seed: int = RANDOM_SEED,
+) -> DataLoader:
+    """
+    Construct the training DataLoader for DCGAN using ONLY authentic (real) faces.
+    
+    Loads 3,500 real face images from RVF10K train/real/ partition, formatted
+    at (64, 64) resolution and normalized to [-1.0, 1.0] matching Tanh generator activation.
+    """
+    dataset = RVF10KDataset(
+        split="train",
+        mode="train",
+        real_only=True,
+        image_size=image_size,
+        normalization=normalization,
+    )
+
+    if persistent_workers is None:
+        persistent_workers = PERSISTENT_WORKERS if num_workers > 0 else False
+
+    generator = create_reproducible_generator(seed)
+
+    return DataLoader(
+        dataset,
+        batch_size=batch_size,
+        shuffle=True,
+        num_workers=num_workers,
+        pin_memory=pin_memory,
+        persistent_workers=persistent_workers if num_workers > 0 else False,
+        generator=generator,
+        worker_init_fn=seed_worker,
+        drop_last=True,
     )
 
 

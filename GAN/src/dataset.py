@@ -60,6 +60,7 @@ class RVF10KDataset(Dataset):
         normalization: str = "imagenet",
         custom_file_paths: Optional[List[Union[str, Path]]] = None,
         return_meta: bool = False,
+        real_only: bool = False,
     ):
         """
         Initialize the RVF10KDataset.
@@ -73,6 +74,7 @@ class RVF10KDataset(Dataset):
             normalization: 'imagenet' or 'gan' (maps to [-1, 1]).
             custom_file_paths: Specific list of paths to load (used for custom subsets/inference).
             return_meta: If True, returns (image, label, metadata_dict) instead of (image, label).
+            real_only: If True, filters strictly for authentic (real) images (used for DCGAN training).
         """
         super().__init__()
         self.root_dir = Path(root_dir) if root_dir is not None else RVF10K_DIR
@@ -81,6 +83,7 @@ class RVF10KDataset(Dataset):
         self.image_size = image_size
         self.normalization = normalization.lower()
         self.return_meta = return_meta
+        self.real_only = real_only
 
         # Assign default transforms based on mode if not explicitly provided
         if transform is not None:
@@ -122,25 +125,26 @@ class RVF10KDataset(Dataset):
         real_dir = split_dir / "real"
         fake_dir = split_dir / "fake"
 
-        if not real_dir.exists() or not fake_dir.exists():
-            raise FileNotFoundError(
-                f"Missing class directories in {split_dir}. Expected 'real/' and 'fake/' folders."
-            )
+        if not real_dir.exists():
+            raise FileNotFoundError(f"Missing 'real/' directory in {split_dir}.")
 
-        # Collect and sort paths deterministically
         real_files = sorted([
             p for p in real_dir.glob("*.*")
             if p.suffix.lower() in SUPPORTED_IMAGE_EXTENSIONS
         ])
-        fake_files = sorted([
-            p for p in fake_dir.glob("*.*")
-            if p.suffix.lower() in SUPPORTED_IMAGE_EXTENSIONS
-        ])
-
         for p in real_files:
             self.samples.append((p, LABEL_REAL))
-        for p in fake_files:
-            self.samples.append((p, LABEL_FAKE))
+
+        # If real_only is True (e.g. for DCGAN training on authentic faces), skip fake images
+        if not self.real_only:
+            if not fake_dir.exists():
+                raise FileNotFoundError(f"Missing 'fake/' directory in {split_dir}.")
+            fake_files = sorted([
+                p for p in fake_dir.glob("*.*")
+                if p.suffix.lower() in SUPPORTED_IMAGE_EXTENSIONS
+            ])
+            for p in fake_files:
+                self.samples.append((p, LABEL_FAKE))
 
     def _index_inference_directory(self) -> None:
         """Index images for unlabelled inference evaluation."""
