@@ -269,8 +269,7 @@ def run_training(
                 plot_loss_curves(history, fig_dir)
 
     except KeyboardInterrupt:
-        print("
-[INTERRUPT] Training gracefully halted by user. Saving current checkpoint...")
+        print("\n[INTERRUPT] Training gracefully halted by user. Saving current checkpoint...")
         save_checkpoint(
             state={
                 "epoch": epoch,
@@ -287,8 +286,6 @@ def run_training(
     create_progress_gif(gen_dir, fig_dir / "training_progress.gif", duration=250)
     create_progress_gif(recon_dir, fig_dir / "reconstruction_progress.gif", duration=250)
 
-    print("
-[COMPLETE] Base ConvVAE training workflow finished successfully.")
 
 
 def main():
