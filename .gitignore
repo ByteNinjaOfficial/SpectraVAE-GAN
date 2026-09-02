@@ -27,9 +27,12 @@ runs/
 wandb/
 mlruns/
 
-# Data files (optional - keep datasets out of Git)
-data/
+# Data files (keep raw datasets out of Git)
+data/*
+!data/README.md
+!data/.gitkeep
 datasets/
+*.zip
 
 # OS files
 .DS_Store

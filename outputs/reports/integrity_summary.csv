@@ -1,0 +1,8 @@
+Metric,Value
+Total Images,10000
+Real Faces (Authentic),5000
+Fake Faces (Synthesized),5000
+Corrupted / Unreadable Files,0
+Real Folder Status,Verified Present
+Fake Folder Status,Verified Present
+Integrity Decision,PASSED (Safe to Proceed)
