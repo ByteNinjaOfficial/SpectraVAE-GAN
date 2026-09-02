@@ -171,13 +171,22 @@ python VAE/scripts/validate_vae.py
 python GAN/src/download_data.py
 ```
 
-### Step 3: Train the Base ConvVAE
-```bash
-# Standard 50-epoch training on GPU/CPU
-python VAE/src/train.py --epochs 50 --batch_size 64 --lr 0.0005 --latent_dim 100
+### Step 3: Train the Base ConvVAE (Official 25-Epoch Execution)
+```powershell
+# Official 25-epoch training command used for baseline
+.\.venv\Scripts\python.exe VAE\src\train.py --epochs 25 --batch_size 64 --lr 0.0005 --latent_dim 100
 
 # Resume from latest checkpoint if interrupted
-python VAE/src/train.py --epochs 50 --resume
+.\.venv\Scripts\python.exe VAE\src\train.py --epochs 25 --resume
+```
+
+### Step 4: Run Post-Training Quantitative Evaluation & Figure Generation
+```powershell
+# Generate training dynamics report and loss curves
+.\.venv\Scripts\python.exe VAE\src\generate_training_report.py
+
+# Run full quantitative validation (N=1,500), residual heatmaps, PCA, and anomaly analysis
+.\.venv\Scripts\python.exe VAE\src\evaluate_vae.py
 ```
 
 ---
@@ -187,8 +196,8 @@ python VAE/src/train.py --epochs 50 --resume
 | Diagnostic Observation | Root Cause Analysis | Corrective Action |
 |---|---|---|
 | **Recon Loss decreases, KL remains healthy (~10-30)** | **Healthy VAE Training.** Decoder learns sharp facial geometry while latent space remains smooth and sampleable. | Optimal state. Continue training. |
-| **KL Loss drops to 0 ($D_{	ext{KL}} 	o 0$)** | **Posterior Collapse.** Encoder outputs $\mu 	o 0, \sigma^2 	o 1$, ignoring input $x$. Decoder behaves as an unconditional model. | Reduce encoder learning rate or check normalization. |
-| **KL Loss explodes ($D_{	ext{KL}} 	o \infty$)** | **Overfitting to Training Samples.** Latent distributions collapse into Dirac deltas, creating gaps in latent space. | Verify standard Gaussian prior alignment and weight decay. |
+| **KL Loss drops to 0 ($D_{\text{KL}} \to 0$)** | **Posterior Collapse.** Encoder outputs $\mu \to 0, \sigma^2 \to 1$, ignoring input $x$. Decoder behaves as an unconditional model. | Reduce encoder learning rate or check normalization. |
+| **KL Loss explodes ($D_{\text{KL}} \to \infty$)** | **Overfitting to Training Samples.** Latent distributions collapse into Dirac deltas, creating gaps in latent space. | Verify standard Gaussian prior alignment and weight decay. |
 | **Slightly blurry reconstructions** | **Normal Base VAE Behavior.** Pixel-wise MSE loss computes the expected conditional mean $\mathbb{E}[x|z]$, naturally penalizing high-frequency edge shifts. | Expected theoretical trade-off of standard VAEs vs GANs. |
 
 ---
@@ -205,3 +214,49 @@ In Phase 4, the trained Base VAE will be evaluated as an **unsupervised deepfake
 
 > [!IMPORTANT]
 > **Scientific Integrity Reminder:** We do **NOT** assume that synthetic faces automatically produce higher reconstruction error. Phase 4 will compute ROC-AUC and Precision-Recall curves empirically across all 3,000 validation images to test whether RVF10K StyleGAN artifacts trigger elevated reconstruction error.
+
+---
+
+## 📈 7. Empirical Results & Training Summary (25 Epochs)
+
+The Base ConvVAE successfully completed an official **25-epoch training run** matching the teammate's DCGAN optimization schedule.
+
+### 7.1 Key Experiment Metrics
+- **Compute Device:** NVIDIA GeForce RTX Laptop GPU (CUDA)
+- **Dataset Partitioning:** 3,500 authentic training faces (`train/real/`), 1,500 holdout validation faces (`valid/real/`), 1,500 fake faces reserved (`valid/fake/`).
+- **Initial Validation Loss (Epoch 1):** `0.1792` (Recon MSE: `0.1683`, KL: `0.0109`)
+- **Final Epoch Metrics (Epoch 25):**
+  - **Train Total Loss:** `0.0508` (Recon MSE: `0.0389`, KL: `0.0119`)
+  - **Val Total Loss:** `0.0494` (Recon MSE: `0.0377`, KL: `0.0116`)
+- **Quantitative Holdout Validation Quality ($N=1,500$):**
+  - **Mean Reconstruction MSE:** `0.0378 ± 0.0149` (Median: `0.0353`, IQR: `0.0176`)
+  - **Mean Reconstruction MAE:** `0.1419 ± 0.0276`
+  - **Mean Reconstruction PSNR:** `20.56 ± 1.64 dB`
+  - **95th Percentile Anomaly Score:** `0.0646`
+  - **99th Percentile Anomaly Score:** `0.0865`
+- **Optimal Checkpoint:** `vae_best.pth` at Epoch 25 with Val Loss = **`0.0494`**
+- **Posterior Integrity:** Zero posterior collapse ($\mathcal{D}_{KL} = 0.0116$, raw sum $\approx 143$ across 100 latent dimensions).
+
+### 7.2 Generated Artifacts & Research Reports
+- **Research Reports:**
+  - [`VAE/outputs/reports/training_report.md`](outputs/reports/training_report.md) (19-section CVPR/ICCV optimization report)
+  - [`VAE/outputs/reports/extended_training_report.md`](outputs/reports/extended_training_report.md) (Extended post-training evaluation report)
+  - [`VAE/outputs/reports/anomaly_score_analysis.md`](outputs/reports/anomaly_score_analysis.md) (Authentic baseline statistical analysis & thresholding hypotheses)
+- **Iteration/Epoch CSV Telemetry:** [`VAE/outputs/reports/training_metrics.csv`](outputs/reports/training_metrics.csv)
+- **Publication Figures (300 DPI):** Located in [`VAE/outputs/figures/`](outputs/figures/)
+  - `loss_curve.png` (Total ELBO loss trajectory)
+  - `reconstruction_loss.png` (Pixel MSE reconstruction curve)
+  - `kl_divergence.png` (Latent KL regularization curve)
+  - `train_vs_validation.png` (Generalization gap & convergence parity)
+  - `vae_training_dashboard.png` (4-panel multi-metric summary)
+  - `generated_evolution_comparison.png` (Generative synthesis timeline across epochs)
+  - `reconstruction_evolution_comparison.png` (Validation reconstruction fidelity timeline)
+  - `reconstruction_error_distribution.png` (Per-image validation MSE histogram & empirical CDF)
+  - `anomaly_score_distribution.png` (Authentic anomaly score baseline & candidate thresholds)
+  - `reconstruction_quality_examples.png` (Validation triplets: Original, Reconstruction, Residual Heatmap)
+  - `latent_space_visualization.png` (2D PCA projection of 1,500 validation latent codes)
+- **Generative Animations:** `training_progress.gif` and `reconstruction_progress.gif`
+- **Reconstruction Grids:** [`VAE/outputs/reconstructions/`](outputs/reconstructions/) (Epochs 001–025)
+- **Sample Generation Grids:** [`VAE/outputs/generated/`](outputs/generated/) (Epochs 001–025)
+
+
