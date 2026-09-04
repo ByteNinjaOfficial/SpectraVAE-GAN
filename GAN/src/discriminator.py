@@ -10,6 +10,7 @@ from pathlib import Path
 from typing import Tuple, Optional
 import torch
 import torch.nn as nn
+from torch.nn.utils.parametrizations import spectral_norm
 
 SRC_DIR = Path(__file__).resolve().parent
 GAN_ROOT = SRC_DIR.parent
@@ -27,39 +28,45 @@ from src.generator import weights_init
 #   Input Image Tensor x in [-1.0, 1.0]
 #       │  Shape: (B, 3, 64, 64)
 #       ▼
-#   [ Layer 1: Conv2d(3   -> 64,  kernel=4, stride=2, pad=1) + LeakyReLU(0.2) ]
+#   [ Layer 1: SN(Conv2d(3   -> 64,  kernel=4, stride=2, pad=1)) + LeakyReLU(0.2) ]
 #       │  Shape: (B, 64, 32, 32)   (No BatchNorm on input layer)
 #       ▼
-#   [ Layer 2: Conv2d(64  -> 128, kernel=4, stride=2, pad=1) + BN + LeakyReLU(0.2) ]
+#   [ Layer 2: SN(Conv2d(64  -> 128, kernel=4, stride=2, pad=1)) + BN + LeakyReLU(0.2) ]
 #       │  Shape: (B, 128, 16, 16)
 #       ▼
-#   [ Layer 3: Conv2d(128 -> 256, kernel=4, stride=2, pad=1) + BN + LeakyReLU(0.2) ]
+#   [ Layer 3: SN(Conv2d(128 -> 256, kernel=4, stride=2, pad=1)) + BN + LeakyReLU(0.2) ]
 #       │  Shape: (B, 256, 8, 8)
 #       ▼
-#   [ Layer 4: Conv2d(256 -> 512, kernel=4, stride=2, pad=1) + BN + LeakyReLU(0.2) ]
+#   [ Layer 4: SN(Conv2d(256 -> 512, kernel=4, stride=2, pad=1)) + BN + LeakyReLU(0.2) ]
 #       │  Shape: (B, 512, 4, 4)
 #       ▼
-#   [ Layer 5: Conv2d(512 -> 1,   kernel=4, stride=1, pad=0) + Flatten ]
+#   [ Layer 5: SN(Conv2d(512 -> 1,   kernel=4, stride=1, pad=0)) + Flatten ]
 #       │  Shape: (B, 1)  (Raw logit / Sigmoidal probability)
 # ==============================================================================
 
 
 class DCGANDiscriminator(nn.Module):
     """
-    Deep Convolutional Generative Adversarial Network Discriminator.
+    Deep Convolutional Generative Adversarial Network Discriminator with Spectral Normalization.
     
-    All-convolutional classification network following Radford et al. (2015):
+    All-convolutional classification network following Radford et al. (2015) enhanced with
+    Miyato et al. (2018) Spectral Normalization via modern PyTorch parametrization API:
       1. Spatial downsampling achieved exclusively via strided 2D convolutions.
-         - Pooling layers (MaxPool, AvgPool) are strictly avoided because deterministic
-           pooling operations discard continuous spatial phase information and non-zero
-           gradient coordinates, impeding adversarial learning.
-      2. Batch Normalization applied to intermediate layers (blocks 2, 3, 4).
-         - BatchNorm is omitted on the first layer to avoid corrupting raw pixel statistics.
-      3. LeakyReLU with negative slope alpha = 0.2 across all hidden layers.
-         - Standard ReLUs can 'die' when negative activations produce zero gradients.
-           LeakyReLU provides a non-zero slope (0.2), ensuring gradients flow back to
-           the Generator even when the Discriminator is highly confident.
-      4. Single output neuron producing a logit (or probability) of real vs fake.
+      2. Spectral Normalization (SN) applied to every convolutional layer in the Discriminator:
+         - Lipschitz Stabilization: Constrains the matrix operator norm (spectral norm)
+           sigma(W) = max_{h != 0} ||W h||_2 / ||h||_2 to 1. By composition of 1-Lipschitz
+           layers and LeakyReLU (Lipschitz constant = 1), the entire Discriminator satisfies
+           ||D(x) - D(y)||_2 <= L ||x - y||_2 with bounded L.
+         - Gradient Improvement for Generator: Prevents the Discriminator from forming steep,
+           saturating decision boundaries where gradients vanish or explode. Generator
+           receives informative, bounded gradient vectors across all iterations.
+         - Discriminator-Only Justification: Bounding the Lipschitz constant is theoretically
+           derived for the adversarial dual formulation (Kantorovich-Rubinstein duality).
+           Applying SN to the Generator over-constrains weight magnitudes, severely degrading
+           its capacity to synthesize intricate high-frequency textures (eyes, hair).
+      3. Batch Normalization applied to intermediate layers (blocks 2, 3, 4).
+      4. LeakyReLU with negative slope alpha = 0.2 across all hidden layers.
+      5. Single output neuron producing a logit (or probability) of real vs fake.
     """
 
     def __init__(
@@ -67,6 +74,7 @@ class DCGANDiscriminator(nn.Module):
         channels: int = 3,
         feature_maps: int = 64,
         apply_sigmoid: bool = False,
+        use_spectral_norm: bool = True,
     ):
         """
         Args:
@@ -75,24 +83,29 @@ class DCGANDiscriminator(nn.Module):
             apply_sigmoid: If True, applies Sigmoid activation in forward pass.
                            Default False returns raw logits for numerical stability
                            when using nn.BCEWithLogitsLoss.
+            use_spectral_norm: If True, applies Spectral Normalization to all Conv2d layers.
         """
         super().__init__()
         self.channels = channels
         self.feature_maps = feature_maps
         self.apply_sigmoid = apply_sigmoid
+        self.use_spectral_norm = use_spectral_norm
+
+        def conv_wrapper(conv: nn.Module) -> nn.Module:
+            return spectral_norm(conv) if use_spectral_norm else conv
 
         # Stage 1: Spatial Downsampling 2x: (B, 3, 64, 64) -> (B, 64, 32, 32)
         # Purpose: Extracts low-level edges and color gradients.
         # BatchNorm is intentionally omitted on the input layer to preserve raw pixel dynamics.
         self.block1 = nn.Sequential(
-            nn.Conv2d(channels, feature_maps, kernel_size=4, stride=2, padding=1, bias=False),
+            conv_wrapper(nn.Conv2d(channels, feature_maps, kernel_size=4, stride=2, padding=1, bias=False)),
             nn.LeakyReLU(0.2, inplace=True),
         )
 
         # Stage 2: Spatial Downsampling 2x: (B, 64, 32, 32) -> (B, 128, 16, 16)
         # Purpose: Identifies local facial textures (skin pores, hair fringes).
         self.block2 = nn.Sequential(
-            nn.Conv2d(feature_maps, feature_maps * 2, kernel_size=4, stride=2, padding=1, bias=False),
+            conv_wrapper(nn.Conv2d(feature_maps, feature_maps * 2, kernel_size=4, stride=2, padding=1, bias=False)),
             nn.BatchNorm2d(feature_maps * 2),
             nn.LeakyReLU(0.2, inplace=True),
         )
@@ -100,7 +113,7 @@ class DCGANDiscriminator(nn.Module):
         # Stage 3: Spatial Downsampling 2x: (B, 128, 16, 16) -> (B, 256, 8, 8)
         # Purpose: Detects compound anatomical components (eyes, teeth, nostrils).
         self.block3 = nn.Sequential(
-            nn.Conv2d(feature_maps * 2, feature_maps * 4, kernel_size=4, stride=2, padding=1, bias=False),
+            conv_wrapper(nn.Conv2d(feature_maps * 2, feature_maps * 4, kernel_size=4, stride=2, padding=1, bias=False)),
             nn.BatchNorm2d(feature_maps * 4),
             nn.LeakyReLU(0.2, inplace=True),
         )
@@ -108,7 +121,7 @@ class DCGANDiscriminator(nn.Module):
         # Stage 4: Spatial Downsampling 2x: (B, 256, 8, 8) -> (B, 512, 4, 4)
         # Purpose: Captures global facial symmetry, perspective coherence, and lighting consistency.
         self.block4 = nn.Sequential(
-            nn.Conv2d(feature_maps * 4, feature_maps * 8, kernel_size=4, stride=2, padding=1, bias=False),
+            conv_wrapper(nn.Conv2d(feature_maps * 4, feature_maps * 8, kernel_size=4, stride=2, padding=1, bias=False)),
             nn.BatchNorm2d(feature_maps * 8),
             nn.LeakyReLU(0.2, inplace=True),
         )
@@ -116,7 +129,7 @@ class DCGANDiscriminator(nn.Module):
         # Stage 5: Terminal Downsampling & Scalar Projection: (B, 512, 4, 4) -> (B, 1, 1, 1)
         # Purpose: Condenses 512-dimensional 4x4 spatial feature volume into a single logit.
         self.block5 = nn.Sequential(
-            nn.Conv2d(feature_maps * 8, 1, kernel_size=4, stride=1, padding=0, bias=False),
+            conv_wrapper(nn.Conv2d(feature_maps * 8, 1, kernel_size=4, stride=1, padding=0, bias=False)),
         )
 
         # Output activation

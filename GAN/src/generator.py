@@ -7,6 +7,7 @@ Maps a 100-dimensional continuous Gaussian latent vector z ~ N(0, I) into a (3, 
 import sys
 from pathlib import Path
 from typing import Tuple
+from copy import deepcopy
 import torch
 import torch.nn as nn
 
@@ -164,9 +165,66 @@ class DCGANGenerator(nn.Module):
         return x
 
 
+class EMAGenerator(nn.Module):
+    """
+    Exponential Moving Average (EMA) Generator Wrapper.
+    
+    TASK 4: Maintains a shadow copy of the DCGANGenerator parameters updated with
+    an exponential decay factor beta = 0.999 at every training iteration:
+        theta_EMA <- beta * theta_EMA + (1 - beta) * theta_current
+    
+    Theoretical Rationale:
+      - Adversarial game dynamics induce high-frequency parameter oscillations around
+        equilibrium points.
+      - Temporal moving averaging acts as an ensemble over training checkpoints,
+        smoothing out noisy parameter trajectories and yielding more photo-realistic,
+        artifact-free synthesized facial structures with lower FID.
+      - The original Generator remains completely unchanged and continues standard SGD/Adam updates.
+    """
+
+    def __init__(self, model: DCGANGenerator, decay: float = 0.999):
+        """
+        Args:
+            model: Source DCGANGenerator instance to shadow.
+            decay: Exponential decay rate (default: 0.999).
+        """
+        super().__init__()
+        self.decay = decay
+        self.ema_model = deepcopy(model)
+        for param in self.ema_model.parameters():
+            param.requires_grad = False
+        self.ema_model.eval()
+
+    def update(self, model: DCGANGenerator) -> None:
+        """
+        Update EMA parameters and copy BatchNorm running statistics.
+        
+        Args:
+            model: Current active DCGANGenerator undergoing backpropagation.
+        """
+        with torch.no_grad():
+            for p_ema, p in zip(self.ema_model.parameters(), model.parameters()):
+                p_ema.data.mul_(self.decay).add_(p.data, alpha=1.0 - self.decay)
+            for b_ema, b in zip(self.ema_model.buffers(), model.buffers()):
+                b_ema.data.copy_(b.data)
+
+    def forward(self, z: torch.Tensor) -> torch.Tensor:
+        """
+        Forward pass synthesizing images using EMA-averaged weights.
+        """
+        return self.ema_model(z)
+
+    def state_dict(self, *args, **kwargs):
+        return self.ema_model.state_dict(*args, **kwargs)
+
+    def load_state_dict(self, state_dict, strict: bool = True):
+        return self.ema_model.load_state_dict(state_dict, strict=strict)
+
+
 if __name__ == "__main__":
     print("=" * 60)
     print(" Milestone 3.2 DCGAN Generator Architecture Test")
+    print(" Milestone 3.2 DCGAN Generator Architecture & EMA Test")
     print("=" * 60)
     netG = DCGANGenerator(latent_dim=100, feature_maps=64, channels=3)
     
@@ -183,3 +241,10 @@ if __name__ == "__main__":
     total_params = sum(p.numel() for p in netG.parameters() if p.requires_grad)
     print(f"Trainable parameters   : {total_params:,}")
     print("[SUCCESS] Milestone 3.2 DCGAN Generator verified.")
+
+    # Test EMA Generator
+    emaG = EMAGenerator(netG, decay=0.999)
+    ema_fakes = emaG(z)
+    print(f"EMA Generator output   : {ema_fakes.shape}")
+    emaG.update(netG)
+    print("[SUCCESS] Milestone 3.2 DCGAN Generator & EMA verified.")

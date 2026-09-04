@@ -50,3 +50,6 @@ Thumbs.db
 build/
 dist/
 *.egg-info/
+
+# Linters & caches
+.ruff_cache/
