@@ -1,128 +1,215 @@
-# GAN-VAE: Research-Grade DeepFake Face Detection & Generative Benchmarking
+# GAN-VAE
 
-GAN-VAE is an empirical research platform designed to investigate facial synthesis artifacts across **DeepFake generators (StyleGAN/RVF10K)**, **Variational Autoencoders (VAEs)**, and **Generative Adversarial Networks (GANs)**, while training and evaluating robust deep learning detectors (CNNs & Vision Transformers).
+Practical learning repository for foundational generative models on the RVF10K face benchmark.
 
----
+## Project Overview
 
-## 📁 Project Architecture & Rationale
+This repository contains two base implementations:
 
-All dataset files, source code, research notebooks, and outputs are consolidated inside the **`GAN/`** directory:
+- A custom convolutional Variational Autoencoder for reconstruction and anomaly scoring.
+- A custom DCGAN for face generation and discriminator-based forensic evaluation.
+
+The goal is to understand the models by training them from scratch, inspecting outputs, and keeping the project reproducible.
+
+## Learning Objective
+
+The code is intentionally educational. It emphasizes:
+
+- Base model implementations.
+- Training and evaluation from first principles.
+- Transparent artifacts, reports, and figures.
+- Easy comparison between VAE and GAN behavior.
+
+## Trainer Constraints
+
+The project follows these constraints:
+
+- Use base implementations only.
+- Do not replace the models with pretrained generative models.
+- Do not use Stable Diffusion.
+- Do not use pretrained Hugging Face generative pipelines.
+- Do not use CivitAI models.
+- Do not download an already trained GAN or VAE.
+- Avoid architectural upgrades unless a confirmed bug needs a fix.
+
+## Repository Structure
+
+Current layout:
 
 ```text
-GAN-VAE/
-│
+.
+├── data/
+│   ├── README.md
+│   └── rvf10k/
 ├── GAN/
-│   ├── data/
-│   │   ├── README.md              # Dataset download & verification instructions
-│   │   └── rvf10k/                # Raw benchmark dataset (10,000 real & fake faces)
-│   │       ├── real/              # Real authentic face images
-│   │       ├── fake/              # Synthesized deepfake face images
-│   │       ├── train/             # Official train split (3,500 real / 3,500 fake)
-│   │       └── valid/             # Official valid split (1,500 real / 1,500 fake)
+│   ├── COMPLETE_PROJECT_REPORT.md
+│   ├── README_PHASE3.md
+│   ├── model_contract.md
 │   ├── notebooks/
-│   │   ├── 01_EDA.ipynb           # CVPR/ICCV-style Exploratory Data Analysis & Hypotheses
-│   │   ├── build_notebook.py      # Automated notebook generator script
-│   │   └── execute_notebook.py    # Headless execution script
-│   ├── src/
-│   │   ├── __init__.py            # Package initialization
-│   │   ├── config.py              # Project paths, random seeds, publication styling tokens
-│   │   ├── download_data.py       # Automated RVF10K dataset fetch and extraction
-│   │   ├── integrity.py           # Dataset verification, corruption scanner, format checker
-│   │   ├── metrics.py             # Photometric (luminance, contrast) and geometry extractors
-│   │   └── visualization.py       # High-DPI publication plots and side-by-side artifact panels
-│   └── outputs/
-│       ├── figures/               # Exported publication-ready figures (PNG, 300 DPI)
-│       └── reports/               # Tabular summaries, integrity reports, statistical logs
-├── setup_project.py               # Automated folder generator script
-├── requirements.txt               # Pinned project dependencies
-└── README.md                      # Comprehensive project guide and setup documentation
+│   ├── outputs/
+│   └── src/
+├── VAE/
+│   ├── README_PHASE3.md
+│   ├── checkpoints/
+│   ├── outputs/
+│   ├── scripts/
+│   └── src/
+├── README.md
+├── requirements.txt
+├── setup_project.py
+└── data.zip
 ```
 
-### Folder Explanations
-- **`GAN/data/rvf10k/`**: Stores the raw, unmodified image corpus. Strict isolation of raw data guarantees experimental repeatability and prevents data corruption or leakage. Raw dataset files remain gitignored.
-- **`GAN/notebooks/`**: Houses scientific notebooks formatted like CVPR/ICCV conference papers, integrating mathematical formulation, executable code, observations, and decisions.
-- **`GAN/src/`**: Modular Python codebase adhering to clean code standards. Isolating reusable functions prevents notebook clutter and facilitates unit testing.
-- **`GAN/outputs/figures/`**: Dedicated destination for all figures generated during analysis, maintaining vector/raster assets for research papers and presentations.
-- **`GAN/outputs/reports/`**: Structured outputs (CSV, Markdown) containing data integrity audits, metric summaries, and statistical validation tables.
+## Models
 
----
+### Variational Autoencoder
 
-## 🛠️ Environment Setup & Installation
+The VAE is a base convolutional VAE trained on authentic RVF10K faces only.
 
-### Step 1: Create Virtual Environment
+- Encoder: 4 strided convolution blocks that map `3 x 64 x 64` images into `mu` and `logvar`.
+- Latent size: `100`.
+- Decoder: symmetric transposed-convolution stack with `Tanh` output.
+- Training objective: reconstruction loss plus KL divergence.
+- Evaluation: reconstruction quality, latent-space PCA, anomaly scores, and generated samples.
 
-#### Windows (PowerShell)
+Key files:
+
+- [VAE source](VAE/src/model.py)
+- [VAE training](VAE/src/train.py)
+- [VAE evaluation](VAE/src/evaluate_vae.py)
+
+### Generative Adversarial Network
+
+The GAN module is a DCGAN trained on authentic RVF10K faces.
+
+- Generator: 5-layer transposed-convolution network from a `100`-dimensional Gaussian latent vector.
+- Discriminator: 5-layer strided-convolution critic with spectral normalization in the current stabilized training path.
+- Training: non-saturating BCE, one-sided label smoothing, TTUR, EMA, and linear learning-rate decay in the extended run.
+- Outputs: epoch-wise sample grids, training curves, milestone reports, and FID evaluation artifacts.
+
+Key files:
+
+- [GAN generator](GAN/src/generator.py)
+- [GAN discriminator](GAN/src/discriminator.py)
+- [GAN training](GAN/src/train.py)
+- [GAN FID](GAN/src/fid.py)
+
+## Installation
+
+Create a virtual environment and install dependencies:
+
 ```powershell
-# Navigate to project repository
-cd "c:\Users\ADVAITH G\Desktop\GAN AND VAE\GAN-VAE"
-
-# Create virtual environment
 python -m venv .venv
-
-# Activate virtual environment
 .\.venv\Scripts\Activate.ps1
-```
-
-#### Linux / macOS (Bash)
-```bash
-cd GAN-VAE
-python3 -m venv .venv
-source .venv/bin/activate
-```
-
----
-
-### Step 2: Install Dependencies
-
-#### Standard Installation
-```bash
-pip install --upgrade pip
 pip install -r requirements.txt
 ```
 
-#### CUDA Acceleration (Recommended for NVIDIA RTX GPUs)
-For GPU acceleration (e.g. NVIDIA RTX 4050 Laptop GPU):
-```bash
-pip install torch torchvision --index-url https://download.pytorch.org/whl/cu124
-pip install -r requirements.txt
+If you need a CUDA-enabled PyTorch build, install the matching wheel from the official PyTorch index before installing the remaining requirements.
+
+## Dataset Setup
+
+The repository expects the RVF10K dataset under:
+
+```text
+data/rvf10k/
+├── train/
+│   ├── real/
+│   └── fake/
+└── valid/
+    ├── real/
+    └── fake/
 ```
 
----
+The shared `data/README.md` documents the local dataset layout and download command.
 
-## 🔬 Phase 1: Dataset Setup & Exploratory Data Analysis (EDA)
+## Running the VAE
 
-Phase 1 focuses exclusively on establishing empirical evidence before any preprocessing decisions are made:
+Validate the model contract:
 
-1. **Automated Dataset Ingestion**:
-   ```bash
-   python GAN/src/download_data.py
-   ```
-2. **Integrity Verification**:
-   ```bash
-   python -c "import sys; sys.path.insert(0, 'GAN'); from src.integrity import verify_dataset_integrity; verify_dataset_integrity()"
-   ```
-3. **Research-Grade EDA Notebook**:
-   Launch JupyterLab and open `GAN/notebooks/01_EDA.ipynb`:
-   ```bash
-   jupyter lab GAN/notebooks/01_EDA.ipynb
-   ```
+```powershell
+.\.venv\Scripts\python.exe VAE\scripts\validate_vae.py
+```
 
----
+Train the VAE:
 
-## 📋 Research Roadmap
+```powershell
+.\.venv\Scripts\python.exe VAE\src\train.py --epochs 25 --batch_size 64 --lr 0.0005 --latent_dim 100 --seed 42
+```
 
-- [x] **Phase 1: Dataset Ingestion & Scientific EDA**
-  - Verify 10,000 samples integrity, format validity, and decodability.
-  - Profile class balance, spatial geometry, and photometric distributions.
-  - Perceptual inspection of eyes, teeth, hair, skin, and background boundaries.
-  - Evidence-based Decision Log (zero ad-hoc preprocessing).
-- [ ] **Phase 2: Data Preprocessing & Canonical Pipeline**
-  - Canonical resolution standardization, data augmentation based on EDA findings.
-  - Stratified train/val/test splitting without identity leakage.
-- [ ] **Phase 3: DeepFake Detection Baseline (CNN / ViT)**
-  - Train ResNet/EfficientNet classifier on RVF10K real vs. fake.
-  - Evaluate ROC-AUC, Precision-Recall, and F1 score.
-- [ ] **Phase 4: Generative Modeling & Comparative Benchmark**
-  - Train VAE for facial reconstruction and latent space interpolation.
-  - Train DCGAN / WGAN-GP for facial generation.
-  - Cross-evaluate detector against original fakes, GAN fakes, and VAE fakes.
+Generate VAE training artifacts:
+
+```powershell
+.\.venv\Scripts\python.exe VAE\src\generate_training_report.py
+.\.venv\Scripts\python.exe VAE\src\evaluate_vae.py
+```
+
+## Evaluating the VAE
+
+The evaluation pipeline reports:
+
+- Reconstruction MSE, MAE, and PSNR.
+- Latent-space PCA visualization.
+- Authentic-face anomaly score baselines.
+- Residual heatmaps and summary reports.
+
+## Running the GAN
+
+Validate the GAN data pipeline and model contract:
+
+```powershell
+.\.venv\Scripts\python.exe GAN\src\tests.py
+.\.venv\Scripts\python.exe GAN\src\verify_phase3.py
+```
+
+Train the GAN:
+
+```powershell
+.\.venv\Scripts\python.exe GAN\src\train.py --epochs 40 --batch_size 64 --lr_g 0.0002 --lr_d 0.0001 --checkpoint_interval 5
+```
+
+## Evaluating / Verifying the GAN
+
+The GAN workflow generates:
+
+- Fixed-noise image grids.
+- Loss curves and equilibrium dashboards.
+- Milestone reports every 5 epochs.
+- EMA comparison grids.
+- FID scores against cached real-face statistics.
+
+## Results and Artifacts
+
+The repository keeps curated results under version control where appropriate.
+
+- `VAE/outputs/figures/`
+- `VAE/outputs/generated/`
+- `VAE/outputs/reconstructions/`
+- `VAE/outputs/reports/`
+- `GAN/outputs/figures/`
+- `GAN/outputs/generated/`
+- `GAN/outputs/reports/`
+
+These artifacts document that the models were actually trained and evaluated.
+
+## VAE vs GAN
+
+- The VAE is reconstruction-first and produces a smooth latent space with explicit anomaly scores.
+- The GAN is generation-first and aims for sharper samples through adversarial training.
+- The VAE is easier to optimize and evaluate deterministically.
+- The GAN is more sensitive to training balance but can produce sharper faces.
+- The VAE preserves input identity through reconstruction.
+- The GAN synthesizes new samples from noise instead of reconstructing an input.
+
+## Current Project Status
+
+### VAE
+
+The VAE implementation is complete, trained, and evaluated on authentic RVF10K faces.
+
+### GAN
+
+The GAN implementation is present, studied from the synchronized repository state, and includes the extended stabilization path with TTUR, spectral normalization, EMA, and FID evaluation.
+
+### Next Phase
+
+The trainer has not yet provided the final assignment specification. This repository is being prepared as a clean baseline before any next-step training or comparison work.

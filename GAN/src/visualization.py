@@ -144,9 +144,9 @@ def plot_photometric_histograms(df: pd.DataFrame, save_path: Optional[Path] = No
     ax1 = axes[0]
     bins_b = np.linspace(20, 230, 45)
     ax1.hist(real_df["brightness"], bins=bins_b, density=True, alpha=0.45,
-             color=PALETTE["real"], label=f"Real ($\mu$={real_df['brightness'].mean():.1f})", edgecolor=PALETTE["real"])
+             color=PALETTE["real"], label=fr"Real ($\mu$={real_df['brightness'].mean():.1f})", edgecolor=PALETTE["real"])
     ax1.hist(fake_df["brightness"], bins=bins_b, density=True, alpha=0.45,
-             color=PALETTE["fake"], label=f"Fake ($\mu$={fake_df['brightness'].mean():.1f})", edgecolor=PALETTE["fake"])
+             color=PALETTE["fake"], label=fr"Fake ($\mu$={fake_df['brightness'].mean():.1f})", edgecolor=PALETTE["fake"])
 
     ax1.axvline(real_df["brightness"].mean(), color=PALETTE["real"], linestyle="--", linewidth=1.5)
     ax1.axvline(fake_df["brightness"].mean(), color=PALETTE["fake"], linestyle="--", linewidth=1.5)
@@ -162,14 +162,14 @@ def plot_photometric_histograms(df: pd.DataFrame, save_path: Optional[Path] = No
     ax2 = axes[1]
     bins_c = np.linspace(15, 95, 45)
     ax2.hist(real_df["contrast"], bins=bins_c, density=True, alpha=0.45,
-             color=PALETTE["real"], label=f"Real ($\mu$={real_df['contrast'].mean():.1f})", edgecolor=PALETTE["real"])
+             color=PALETTE["real"], label=fr"Real ($\mu$={real_df['contrast'].mean():.1f})", edgecolor=PALETTE["real"])
     ax2.hist(fake_df["contrast"], bins=bins_c, density=True, alpha=0.45,
-             color=PALETTE["fake"], label=f"Fake ($\mu$={fake_df['contrast'].mean():.1f})", edgecolor=PALETTE["fake"])
+             color=PALETTE["fake"], label=fr"Fake ($\mu$={fake_df['contrast'].mean():.1f})", edgecolor=PALETTE["fake"])
 
     ax2.axvline(real_df["contrast"].mean(), color=PALETTE["real"], linestyle="--", linewidth=1.5)
     ax2.axvline(fake_df["contrast"].mean(), color=PALETTE["fake"], linestyle="--", linewidth=1.5)
     ax2.set_title("Contrast Distribution (RMS Contrast)", fontsize=11, fontweight="bold", pad=10)
-    ax2.set_xlabel("RMS Contrast ($\sigma_Y$)", fontsize=10)
+    ax2.set_xlabel(r"RMS Contrast ($\sigma_Y$)", fontsize=10)
     ax2.set_ylabel("Probability Density", fontsize=10)
     ax2.legend(loc="upper right", framealpha=0.9)
     ax2.grid(True, linestyle="--", alpha=0.6)

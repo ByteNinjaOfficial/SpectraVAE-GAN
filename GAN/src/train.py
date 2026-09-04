@@ -16,7 +16,6 @@ import argparse
 import signal
 from pathlib import Path
 from typing import Dict, List, Any, Optional
-from typing import Dict, List, Any, Optional, Tuple
 import numpy as np
 import torch
 import torch.nn as nn
@@ -44,7 +43,6 @@ from src.config import (
     set_seed,
 )
 from src.dataloader import get_dcgan_train_loader
-from src.generator import DCGANGenerator
 from src.generator import DCGANGenerator, EMAGenerator
 from src.discriminator import DCGANDiscriminator
 from src.losses import DCGANLoss
@@ -130,7 +128,6 @@ def compute_gradient_norm(model: nn.Module) -> float:
 
 
 def train_dcgan(
-    epochs: int = 25,
     epochs: int = 40,
     batch_size: int = 64,
     lr: float = 0.0002,
@@ -145,7 +142,6 @@ def train_dcgan(
     resume: str = "auto",
     real_label_smoothing: float = 0.9,
     device: torch.device = TORCH_DEVICE,
-    dry_run_batches: int = 0,
     dry_run_batches: int = 3,
     eval_fid: bool = True,
 ) -> Dict[str, Any]:
@@ -157,9 +153,6 @@ def train_dcgan(
     global INTERRUPTED
     set_seed(RANDOM_SEED)
 
-    print("=" * 72)
-    print(" DeepFakeLab (GAN Module) - Extended DCGAN Training Engine (25 Epochs)")
-    print("=" * 72)
     print("=" * 76)
     print(" DeepFakeLab (GAN Module) - DCGAN Optimization & Stabilization Engine (Epochs 25 -> 40)")
     print("=" * 76)
@@ -189,14 +182,9 @@ def train_dcgan(
     print(f"[DATASET] Loaded {total_real_images:,} authentic real face images for training.")
 
     # 2. Instantiate Networks
-    # 2. Instantiate Networks (TASK 3: Spectral Normalization in Discriminator only)
     netG = DCGANGenerator(latent_dim=latent_dim, feature_maps=64, channels=3).to(device)
-    netD = DCGANDiscriminator(channels=3, feature_maps=64, apply_sigmoid=False).to(device)
     netD = DCGANDiscriminator(channels=3, feature_maps=64, apply_sigmoid=False, use_spectral_norm=True).to(device)
 
-    # 3. Setup Optimizers & Loss Module
-    optimizerD = optim.Adam(netD.parameters(), lr=lr, betas=(beta1, 0.999))
-    optimizerG = optim.Adam(netG.parameters(), lr=lr, betas=(beta1, 0.999))
     # 3. Setup Optimizers with TTUR (TASK 2: G LR = 0.0002, D LR = 0.0001)
     optimizerD = optim.Adam(netD.parameters(), lr=lr_d, betas=(beta1, beta2))
     optimizerG = optim.Adam(netG.parameters(), lr=lr_g, betas=(beta1, beta2))
@@ -205,11 +193,9 @@ def train_dcgan(
     # 4. Generate Constant Fixed Noise (64 samples for 8x8 panel)
     fixed_noise = generate_fixed_noise(num_samples=64, latent_dim=latent_dim, device=device)
 
-    # 5. Milestone 3.6A: Automatic Checkpoint Detection & Resume
     # 5. Milestone Checkpoint Resume (TASK 1)
     start_epoch = 1
     global_iteration = 0
-    history: Dict[str, List[float]] = {"d_loss": [], "g_loss": [], "d_x": [], "d_gz": []}
     history: Dict[str, List[float]] = {
         "d_loss": [],
         "g_loss": [],
@@ -237,7 +223,6 @@ def train_dcgan(
         d_resume_path = CHECKPOINTS_DIR / resume_target.name.replace("generator", "discriminator")
         if d_resume_path.exists():
             load_checkpoint(d_resume_path, netD, optimizerD, device=device)
-        
 
         start_epoch = ckpt_g.get("epoch", 0) + 1
         history = ckpt_g.get("history", history)
@@ -261,7 +246,6 @@ def train_dcgan(
     else:
         print("[TRAINING] Starting clean initialization from Epoch 01.")
 
-    # 6. Initialize CSV Metric Logger
     # 6. Instantiate EMA Generator (TASK 4: EMA Generator with beta = 0.999)
     netG_ema = EMAGenerator(netG, decay=ema_decay).to(device)
     latest_ema_path = CHECKPOINTS_DIR / "generator_ema_latest.pth"
@@ -337,7 +321,6 @@ def train_dcgan(
         running_grad_d = 0.0
         batch_count = 0
 
-        pbar = tqdm(train_loader, desc=f"Epoch [{epoch:02d}/{epochs:02d}]", leave=True)
         pbar = tqdm(train_loader, desc=f"Epoch [{epoch:02d}/{epochs:02d}] (lrG={current_lr_g:.1e}, lrD={current_lr_d:.1e})", leave=True)
 
         for i, (real_images, _) in enumerate(pbar):
@@ -351,7 +334,6 @@ def train_dcgan(
             real_images = real_images.to(device)
 
             # -------------------------------------------------------------
-            # STEP 1: UPDATE DISCRIMINATOR
             # STEP 1: UPDATE DISCRIMINATOR (TTUR Step 1)
             # -------------------------------------------------------------
             netD.zero_grad(set_to_none=True)
@@ -373,7 +355,6 @@ def train_dcgan(
             optimizerD.step()
 
             # -------------------------------------------------------------
-            # STEP 2: UPDATE GENERATOR
             # STEP 2: UPDATE GENERATOR (TTUR Step 2)
             # -------------------------------------------------------------
             netG.zero_grad(set_to_none=True)
@@ -389,7 +370,6 @@ def train_dcgan(
             optimizerG.step()
 
             # -------------------------------------------------------------
-            # STEP 3: MILESTONE 3.6B - ITERATION METRIC LOGGING
             # STEP 3: UPDATE EMA GENERATOR (TASK 4)
             # -------------------------------------------------------------
             netG_ema.update(netG)
@@ -406,7 +386,6 @@ def train_dcgan(
                 f"{d_gz1:.5f}",
                 f"{d_gz2:.5f}",
             ])
-            if global_iteration % 10 == 0:
             if global_iteration % 5 == 0:
                 csv_file.flush()
 
@@ -451,7 +430,6 @@ def train_dcgan(
         print(
             f" [EPOCH {epoch:02d} STATS] "
             f"Loss_D: {avg_d_loss:.4f} | Loss_G: {avg_g_loss:.4f} | "
-            f"D(x): {avg_d_x:.4f} | D(G(z)): {avg_d_gz:.4f}"
             f"D(x): {avg_d_x:.4f} | D(G(z)): {avg_d_gz:.4f} | "
             f"Grad_G: {avg_grad_g:.1f} | Grad_D: {avg_grad_d:.1f}"
         )
@@ -522,14 +500,6 @@ def train_dcgan(
     # 8. POST-TRAINING DASHBOARDS & EVOLUTION
     # 9. POST-TRAINING EVALUATION & ARTIFACTS
     # ==========================================
-    print("\n[POST-TRAINING] Recompiling dashboards, evolution reports, and animations...")
-    if len(history["d_loss"]) > 0:
-        update_all_dashboards(history, save_dir=FIGURES_DIR)
-        compile_training_gif(source_dir=GENERATED_DIR, output_path=FIGURES_DIR / "training_progress.gif")
-        generate_evolution_report(source_dir=GENERATED_DIR, output_path=FIGURES_DIR / "evolution_report.png")
-    print("\n[POST-TRAINING] Generating optimization artifacts, evolution reports, and dashboards...")
-
-    print("[SUCCESS] Extended Training & Adversarial Rebalancing completed cleanly.")
     # Task 4: Save EMA Comparison Grids
     p_curr, p_ema, p_comp = save_ema_comparison_grid(
         netG=netG,
@@ -588,8 +558,6 @@ def train_dcgan(
 
 
 def parse_args():
-    parser = argparse.ArgumentParser(description="DeepFakeLab Extended DCGAN Training Engine")
-    parser.add_argument("--epochs", type=int, default=25, help="Total target epochs (default: 25)")
     parser = argparse.ArgumentParser(description="DeepFakeLab DCGAN Extended Optimization Engine")
     parser.add_argument("--epochs", type=int, default=40, help="Total target epochs (default: 40)")
     parser.add_argument("--batch_size", type=int, default=64, help="Batch size (default: 64)")
@@ -597,10 +565,8 @@ def parse_args():
     parser.add_argument("--lr_g", type=float, default=0.0002, help="Generator LR (default: 0.0002)")
     parser.add_argument("--lr_d", type=float, default=0.0001, help="Discriminator LR (TTUR default: 0.0001)")
     parser.add_argument("--beta1", type=float, default=0.5, help="Adam beta1 (default: 0.5)")
-    parser.add_argument("--checkpoint_interval", type=int, default=5, help="Milestone checkpoint interval")
     parser.add_argument("--checkpoint_interval", type=int, default=5, help="Milestone checkpoint interval (default: 5)")
     parser.add_argument("--resume", type=str, default="auto", help="Resume mode ('auto', path, or empty)")
-    parser.add_argument("--dry_run", type=int, default=0, help="Dry run: limit batches per epoch")
     parser.add_argument("--dry_run", type=int, default=3, help="Batches per epoch (default: 3 to match prior run)")
     parser.add_argument("--no_fid", action="store_true", help="Skip post-training FID evaluation")
     return parser.parse_args()

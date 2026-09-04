@@ -46,25 +46,36 @@ To train the encoder with gradient descent, we need to backpropagate through the
 
 The **Reparameterization Trick** isolates the randomness into an independent auxiliary noise variable $\epsilon \sim \mathcal{N}(0, I)$:
 
-$$z = \mu(x) + \sigma(x) \odot \epsilon \quad 	ext{where} \quad \sigma(x) = \exp\left(rac{1}{2} \log \sigma^2(x)ight)$$
+$$z = \mu(x) + \sigma(x) \odot \epsilon \quad 	ext{where} \quad \sigma(x) = \exp\left(rac{1}{2} \log \sigma^2(x)
+ight)$$
+$$z = \mu(x) + \sigma(x) \odot \epsilon \quad \text{where} \quad \sigma(x) = \exp\left(\frac{1}{2} \log \sigma^2(x)\right)$$
 
 This allows gradients to flow directly to $\mu$ and $\log \sigma^2$:
 
 $$rac{\partial z}{\partial \mu} = 1, \quad rac{\partial z}{\partial \sigma} = \epsilon$$
+$$\frac{\partial z}{\partial \mu} = 1, \quad \frac{\partial z}{\partial \sigma} = \epsilon$$
 
 ### 1.4 The VAE Loss Function (ELBO)
 The VAE objective maximizes the Evidence Lower Bound (ELBO), or equivalently minimizes the two-part loss:
 
 $$\mathcal{L}_{	ext{VAE}} = \mathcal{L}_{	ext{reconstruction}} + \mathcal{D}_{	ext{KL}}(q_\phi(z|x) \parallel p(z))$$
+$$\mathcal{L}_{\text{VAE}} = \mathcal{L}_{\text{reconstruction}} + \mathcal{D}_{\text{KL}}(q_\phi(z|x) \parallel p(z))$$
 
 1. **Reconstruction Loss ($\mathcal{L}_{	ext{reconstruction}}$):**
    - For images normalized to $[-1, 1]$ with a $	ext{Tanh}$ decoder activation, Mean Squared Error (MSE) is the standard negative log-likelihood surrogate under a Gaussian observation model:
    $$\mathcal{L}_{	ext{recon}} = rac{1}{C \cdot H \cdot W} \sum_{c, h, w} (x_{c,h,w} - \hat{x}_{c,h,w})^2$$
+1. **Reconstruction Loss ($\mathcal{L}_{\text{reconstruction}}$):**
+   - For images normalized to $[-1, 1]$ with a $\text{Tanh}$ decoder activation, Mean Squared Error (MSE) is the standard negative log-likelihood surrogate under a Gaussian observation model:
+   $$\mathcal{L}_{\text{recon}} = \frac{1}{C \cdot H \cdot W} \sum_{c, h, w} (x_{c,h,w} - \hat{x}_{c,h,w})^2$$
 
 2. **Kullback-Leibler Divergence ($\mathcal{D}_{	ext{KL}}$):**
    - Measures how much the learned posterior $q_\phi(z|x) = \mathcal{N}(\mu, 	ext{diag}(\sigma^2))$ diverges from the standard Gaussian prior $p(z) = \mathcal{N}(0, I)$.
+2. **Kullback-Leibler Divergence ($\mathcal{D}_{\text{KL}}$):**
+   - Measures how much the learned posterior $q_\phi(z|x) = \mathcal{N}(\mu, \text{diag}(\sigma^2))$ diverges from the standard Gaussian prior $p(z) = \mathcal{N}(0, I)$.
    - For diagonal Gaussians, it has a closed-form analytical solution:
-   $$\mathcal{D}_{	ext{KL}} = -rac{1}{2} \sum_{j=1}^d \left( 1 + \log \sigma_j^2 - \mu_j^2 - \sigma_j^2 ight)$$
+   $$\mathcal{D}_{	ext{KL}} = -rac{1}{2} \sum_{j=1}^d \left( 1 + \log \sigma_j^2 - \mu_j^2 - \sigma_j^2 
+ight)$$
+   $$\mathcal{D}_{\text{KL}} = -\frac{1}{2} \sum_{j=1}^d \left( 1 + \log \sigma_j^2 - \mu_j^2 - \sigma_j^2 \right)$$
 
 3. **Loss Dynamics & The Generative Trade-off:**
    - The **Reconstruction Loss** acts as an *attractor*, forcing latent representations apart so the decoder can reconstruct fine individual facial features.
@@ -248,9 +259,10 @@ The Base ConvVAE successfully completed an official **25-epoch training run** ma
   - `reconstruction_loss.png` (Pixel MSE reconstruction curve)
   - `kl_divergence.png` (Latent KL regularization curve)
   - `train_vs_validation.png` (Generalization gap & convergence parity)
-  - `vae_training_dashboard.png` (4-panel multi-metric summary)
+  - `training_dashboard.png` / `vae_training_dashboard.png` (4-panel multi-metric summary)
   - `generated_evolution_comparison.png` (Generative synthesis timeline across epochs)
-  - `reconstruction_evolution_comparison.png` (Validation reconstruction fidelity timeline)
+  - `training_dashboard.png` / `vae_training_dashboard.png` (4-panel multi-metric summary)
+  - `vae_training_dashboard.png` (4-panel multi-metric summary)
   - `reconstruction_error_distribution.png` (Per-image validation MSE histogram & empirical CDF)
   - `anomaly_score_distribution.png` (Authentic anomaly score baseline & candidate thresholds)
   - `reconstruction_quality_examples.png` (Validation triplets: Original, Reconstruction, Residual Heatmap)
