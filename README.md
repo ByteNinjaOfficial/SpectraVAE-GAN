@@ -1,4 +1,4 @@
-# GAN-VAE: Dual Generative Modeling on RVF10K
+# SpectraVAE-GAN: Dual Generative Modeling on RVF10K
 
 <div align="center">
 
@@ -399,7 +399,7 @@ All modules are protected by automated test suites to guarantee numerical stabil
 
 ## 11. Authors & Academic Context
 
-* **Project:** Foundational Generative Modeling on RVF10K Faces
+* **Project:** SpectraVAE-GAN — Foundational Generative Modeling on RVF10K Faces
 * **Module:** Module-6: Computer Vision & Generative AI
 * **Engineers & Contributors:**
   * **Arunkumaar TS** — *Project Lead & VAE Research Engineer (ConvVAE Architecture, ELBO Mathematical Derivation, Reparameterization Trick, Loss Normalization, Statistical Anomaly Scoring, Latent Space PCA Visualizations & Comprehensive Telemetry Reports)*
